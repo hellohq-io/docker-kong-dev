@@ -20,7 +20,7 @@ ARG SERF_VERSION="0.7.0"
 
 # `--without-luajit-lua52` compilation flag is required
 # for Kong to work with OpenResty 1.11.2.4
-ARG RESTY_VERSION="1.11.2.4"
+ARG RESTY_VERSION="1.11.2.5"
 
 ARG RESTY_LUAROCKS_VERSION="2.4.2"
 ARG RESTY_OPENSSL_VERSION="1.0.2j"
@@ -138,28 +138,3 @@ RUN cd /tmp/ \
 
 # Fix path to OpenSSL directory for luarocks to work
 ENV OPENSSL_DIR=/usr/
-
-# Disable code caching so local changes can be tested without restarting Kong
-ENV KONG_LUA_CODE_CACHE=false
-
-# Enable detailed logging
-ENV KONG_LOG_LEVEL=debug
-
-# Set Kong version
-ENV KONG_VERSION=c7b4b48e6fd26c2789e38458d0a099ef08e631bb
-
-# Install Kong from source
-RUN mkdir /kong/ \
-    && cd /kong/ \
-    && git clone https://github.com/Mashape/kong.git . \
-    && git checkout $KONG_VERSION \
-    && make install \
-    && make dev \
-    && apk del .build-deps
-
-WORKDIR /kong/
-
-RUN nginx -V && resty -V && luarocks --version && serf version
-
-# Ports for proxy, admin API, and clustering
-EXPOSE 7946 8000 8001 8443
