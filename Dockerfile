@@ -1,30 +1,18 @@
-# Dockerfile for Kong testing, and development.
-#
-# This image is based on:
-#
-#   Dockerfile - alpine-fat
-#   https://github.com/openresty/docker-openresty
-#
-#   This is an alpine-based build that keeps some build-related
-#   packages, has perl installed for opm, and includes luarocks.
+# Dockerfile - alpine
+# https://github.com/openresty/docker-openresty
 
-FROM alpine:latest
+ARG RESTY_IMAGE_BASE="alpine"
+ARG RESTY_IMAGE_TAG="3.8"
 
-# Evan maintains openresty/openresty
-# Ian maintains mrsaints/docker-kong-dev
-LABEL maintainer "Evan Wies <evan@neomantra.net>, Ian L. <os@fyianlai.com>"
+FROM ${RESTY_IMAGE_BASE}:${RESTY_IMAGE_TAG}
+
+LABEL maintainer="Evan Wies <evan@neomantra.net>"
 
 # Docker Build Arguments
-
-ARG SERF_VERSION="0.7.0"
-
-# `--without-luajit-lua52` compilation flag is required
-# for Kong to work with OpenResty 1.11.2.4
-ARG RESTY_VERSION="1.11.2.5"
-
+ARG RESTY_VERSION="1.13.6.2"
 ARG RESTY_LUAROCKS_VERSION="2.4.2"
-ARG RESTY_OPENSSL_VERSION="1.0.2j"
-ARG RESTY_PCRE_VERSION="8.39"
+ARG RESTY_OPENSSL_VERSION="1.0.2p"
+ARG RESTY_PCRE_VERSION="8.42"
 ARG RESTY_J="1"
 ARG RESTY_CONFIG_OPTIONS="\
     --with-file-aio \
@@ -55,8 +43,22 @@ ARG RESTY_CONFIG_OPTIONS="\
     --with-stream \
     --with-stream_ssl_module \
     --with-threads \
-    --without-luajit-lua52 \
     "
+ARG RESTY_CONFIG_OPTIONS_MORE=""
+ARG RESTY_ADD_PACKAGE_BUILDDEPS=""
+ARG RESTY_ADD_PACKAGE_RUNDEPS=""
+ARG RESTY_EVAL_PRE_CONFIGURE=""
+ARG RESTY_EVAL_POST_MAKE=""
+
+LABEL resty_version="${RESTY_VERSION}"
+LABEL resty_openssl_version="${RESTY_OPENSSL_VERSION}"
+LABEL resty_pcre_version="${RESTY_PCRE_VERSION}"
+LABEL resty_config_options="${RESTY_CONFIG_OPTIONS}"
+LABEL resty_config_options_more="${RESTY_CONFIG_OPTIONS_MORE}"
+LABEL resty_add_package_builddeps="${RESTY_ADD_PACKAGE_BUILDDEPS}"
+LABEL resty_add_package_rundeps="${RESTY_ADD_PACKAGE_RUNDEPS}"
+LABEL resty_eval_pre_configure="${RESTY_EVAL_PRE_CONFIGURE}"
+LABEL resty_eval_post_make="${RESTY_EVAL_POST_MAKE}"
 
 # These are not intended to be user-specified
 ARG _RESTY_CONFIG_DEPS="--with-openssl=/tmp/openssl-${RESTY_OPENSSL_VERSION} --with-pcre=/tmp/pcre-${RESTY_PCRE_VERSION}"
@@ -67,33 +69,32 @@ ARG _RESTY_CONFIG_DEPS="--with-openssl=/tmp/openssl-${RESTY_OPENSSL_VERSION} --w
 # 3) Build OpenResty
 # 4) Cleanup
 
-RUN \
-    apk add --no-cache --virtual .build-deps \
+RUN apk add --no-cache --virtual .build-deps \
+        build-base \
         curl \
         gd-dev \
         geoip-dev \
+        git \
         libxslt-dev \
+        linux-headers \
+        make \
         perl-dev \
         readline-dev \
         zlib-dev \
+        ${RESTY_ADD_PACKAGE_BUILDDEPS} \
     && apk add --no-cache \
-        bash \
-        build-base \
         curl \
         gd \
         geoip \
-        git \
         libgcc \
         libxslt \
-        linux-headers \
-        make \
-        nano \
         openssl \
         openssl-dev \
         perl \
-        unzip \
         zlib \
+        ${RESTY_ADD_PACKAGE_RUNDEPS} \
     && cd /tmp \
+    && if [ -n "${RESTY_EVAL_PRE_CONFIGURE}" ]; then eval $(echo ${RESTY_EVAL_PRE_CONFIGURE}); fi \
     && curl -fSL https://www.openssl.org/source/openssl-${RESTY_OPENSSL_VERSION}.tar.gz -o openssl-${RESTY_OPENSSL_VERSION}.tar.gz \
     && tar xzf openssl-${RESTY_OPENSSL_VERSION}.tar.gz \
     && curl -fSL https://ftp.pcre.org/pub/pcre/pcre-${RESTY_PCRE_VERSION}.tar.gz -o pcre-${RESTY_PCRE_VERSION}.tar.gz \
@@ -101,10 +102,11 @@ RUN \
     && curl -fSL https://openresty.org/download/openresty-${RESTY_VERSION}.tar.gz -o openresty-${RESTY_VERSION}.tar.gz \
     && tar xzf openresty-${RESTY_VERSION}.tar.gz \
     && cd /tmp/openresty-${RESTY_VERSION} \
-    && ./configure -j${RESTY_J} ${_RESTY_CONFIG_DEPS} ${RESTY_CONFIG_OPTIONS} \
+    && ./configure -j${RESTY_J} ${_RESTY_CONFIG_DEPS} ${RESTY_CONFIG_OPTIONS} ${RESTY_CONFIG_OPTIONS_MORE} \
     && make -j${RESTY_J} \
     && make -j${RESTY_J} install \
     && cd /tmp \
+    && if [ -n "${RESTY_EVAL_POST_MAKE}" ]; then eval $(echo ${RESTY_EVAL_POST_MAKE}); fi \
     && rm -rf \
         openssl-${RESTY_OPENSSL_VERSION} \
         openssl-${RESTY_OPENSSL_VERSION}.tar.gz \
@@ -126,15 +128,7 @@ RUN \
     && ln -sf /dev/stderr /usr/local/openresty/nginx/logs/error.log
 
 # Add additional binaries into PATH for convenience
-# Also, include path to Kong 'binary'
-ENV PATH=$PATH:/usr/local/openresty/luajit/bin/:/usr/local/openresty/nginx/sbin/:/usr/local/openresty/bin/:/kong/bin/
-
-# Install Serf
-RUN cd /tmp/ \
-    && wget https://releases.hashicorp.com/serf/${SERF_VERSION}/serf_${SERF_VERSION}_linux_amd64.zip \
-    && unzip serf_${SERF_VERSION}_linux_amd64.zip \
-    && mv serf /usr/local/bin/serf \
-    && rm -rf serf_${SERF_VERSION}_linux_amd64.zip
+ENV PATH=$PATH:/usr/local/openresty/luajit/bin:/usr/local/openresty/nginx/sbin:/usr/local/openresty/bin:/kong/bin/
 
 # Fix path to OpenSSL directory for luarocks to work
 ENV OPENSSL_DIR=/usr/
